@@ -11,7 +11,7 @@ CLIENT_ID = st.secrets["SPOTIPY_CLIENT_ID"]
 CLIENT_SECRET = st.secrets["SPOTIPY_CLIENT_SECRET"]
 # The redirect URI must match the one set in your Spotify Developer Dashboard.
 # For local development, `http://localhost:8501` is common.
-REDIRECT_URI = st.secrets["SPOTIPY_REDIRECT_URI"]
+REDIRECT_URI = "https://demo-run-hdp5ngt9c3662atwfqtbkx.streamlit.app/"
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(
