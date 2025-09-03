@@ -17,6 +17,7 @@ REDIRECT_URI = "https://demo-run-hdp5ngt9c3662atwfqtbkx.streamlit.app/"
 st.set_page_config(
     page_title="Spotify Dashboard",
     page_icon="🎵",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
@@ -43,8 +44,8 @@ def get_token_info():
         auth_code = st.query_params['code']
         sp_oauth = get_spotify_oauth()
         try:
-            # Exchange the auth code for an access token
-            token_info = sp_oauth.get_access_token(auth_code, as_dict=True)
+            # Exchange the auth code for an access token, bypassing the cache to ensure new scopes are applied.
+            token_info = sp_oauth.get_access_token(auth_code, as_dict=True, check_cache=False)
             st.session_state['token_info'] = token_info
             # Clear the query params to prevent re-using the code
             st.query_params.clear()
