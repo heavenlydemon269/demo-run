@@ -17,7 +17,6 @@ REDIRECT_URI = "https://demo-run-hdp5ngt9c3662atwfqtbkx.streamlit.app/"
 st.set_page_config(
     page_title="Spotify Dashboard",
     page_icon="🎵",
-    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
@@ -30,7 +29,7 @@ def get_spotify_oauth():
         client_secret=CLIENT_SECRET,
         redirect_uri=REDIRECT_URI,
         scope="user-read-private user-read-email user-top-read user-read-recently-played",
-        cache_path=".spotifycache", # Caches tokens
+        cache_path=None, # Disable file-based caching for Streamlit
         show_dialog=True # Ensures the user is always prompted for authorization
     )
 
@@ -180,6 +179,11 @@ def main():
             if st.button("Retry Login"):
                  st.session_state.pop('token_info', None)
                  st.rerun()
+
+
+if __name__ == "__main__":
+    main()
+
 
 
 if __name__ == "__main__":
