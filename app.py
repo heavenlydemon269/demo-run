@@ -13,11 +13,11 @@ CLIENT_SECRET = st.secrets["SPOTIPY_CLIENT_SECRET"]
 # For local development, `http://localhost:8501` is common.
 REDIRECT_URI = "https://demo-run-hdp5ngt9c3662atwfqtbkx.streamlit.app/"
 
+
 # --- Streamlit Page Configuration ---
 st.set_page_config(
     page_title="Spotify Dashboard",
     page_icon="🎵",
-    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
@@ -152,7 +152,8 @@ def main():
         st.write("Log in to see your listening habits and stats.")
 
         sp_oauth = get_spotify_oauth()
-        auth_url = sp_oauth.get_authorize_url()
+        # Add show_dialog=True to always prompt for authorization, ensuring correct scopes are granted.
+        auth_url = sp_oauth.get_authorize_url(show_dialog=True)
         # Use st.link_button for a clean, non-form based redirection
         st.link_button("Login with Spotify", auth_url, use_container_width=True)
     else:
@@ -179,6 +180,11 @@ def main():
             if st.button("Retry Login"):
                  st.session_state.pop('token_info', None)
                  st.rerun()
+
+
+if __name__ == "__main__":
+    main()
+
 
 
 if __name__ == "__main__":
