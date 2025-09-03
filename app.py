@@ -17,7 +17,6 @@ REDIRECT_URI = "https://demo-run-hdp5ngt9c3662atwfqtbkx.streamlit.app/"
 st.set_page_config(
     page_title="Spotify Dashboard",
     page_icon="🎵",
-    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
