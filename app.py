@@ -17,6 +17,7 @@ REDIRECT_URI = "https://demo-run-hdp5ngt9c3662atwfqtbkx.streamlit.app/"
 st.set_page_config(
     page_title="Spotify Dashboard",
     page_icon="🎵",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
@@ -83,56 +84,76 @@ def get_spotify_client(token_info):
 
 def display_user_profile(sp):
     """Displays the user's Spotify profile information."""
-    user = sp.current_user()
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if user['images']:
-            st.image(user['images'][0]['url'], width=150)
-        else:
-            st.image("https://placehold.co/150x150/2c2c2c/ffffff?text=User", width=150)
-    with col2:
-        st.title(f"Welcome, {user['display_name']}!")
-        st.subheader(f"Email: {user['email']}")
-        st.write(f"Followers: {user['followers']['total']}")
-        st.link_button("View Profile on Spotify", user['external_urls']['spotify'])
+    try:
+        user = sp.current_user()
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if user['images']:
+                st.image(user['images'][0]['url'], width=150)
+            else:
+                st.image("https://placehold.co/150x150/2c2c2c/ffffff?text=User", width=150)
+        with col2:
+            st.title(f"Welcome, {user['display_name']}!")
+            st.subheader(f"Email: {user['email']}")
+            st.write(f"Followers: {user['followers']['total']}")
+            st.link_button("View Profile on Spotify", user['external_urls']['spotify'])
+    except spotipy.exceptions.SpotifyException:
+        st.error("Authentication error. Your session may have expired.")
+        # Force a re-login by clearing the token and rerunning the app
+        if 'token_info' in st.session_state:
+            del st.session_state['token_info']
+            st.rerun()
 
 def display_top_artists(sp):
     """Displays the user's top artists."""
-    st.header("Your Top Artists (Last 6 Months)")
-    top_artists = sp.current_user_top_artists(limit=10, time_range='medium_term')
-    if not top_artists['items']:
-        st.warning("Couldn't find any top artists. Go listen to some music!")
-        return
+    try:
+        st.header("Your Top Artists (Last 6 Months)")
+        top_artists = sp.current_user_top_artists(limit=10, time_range='medium_term')
+        if not top_artists['items']:
+            st.warning("Couldn't find any top artists. Go listen to some music!")
+            return
 
-    cols = st.columns(5)
-    for i, artist in enumerate(top_artists['items']):
-        with cols[i % 5]:
-            with st.container(border=True):
-                if artist['images']:
-                    st.image(artist['images'][2]['url'])
-                st.markdown(f"**{i+1}. {artist['name']}**")
-                st.markdown(f"*{', '.join(g.title() for g in artist['genres'][:2])}*")
-                st.link_button("Listen", artist['external_urls']['spotify'], use_container_width=True)
+        cols = st.columns(5)
+        for i, artist in enumerate(top_artists['items']):
+            with cols[i % 5]:
+                with st.container(border=True):
+                    if artist['images']:
+                        st.image(artist['images'][2]['url'])
+                    st.markdown(f"**{i+1}. {artist['name']}**")
+                    st.markdown(f"*{', '.join(g.title() for g in artist['genres'][:2])}*")
+                    st.link_button("Listen", artist['external_urls']['spotify'], use_container_width=True)
+    except spotipy.exceptions.SpotifyException:
+        # This will likely be caught by the first function, but it's good practice
+        st.error("Could not retrieve top artists. Please try logging in again.")
+        if 'token_info' in st.session_state:
+            del st.session_state['token_info']
+            st.rerun()
 
 
 def display_recently_played(sp):
     """Displays recently played tracks."""
-    st.header("Recently Played Tracks")
-    recently_played = sp.current_user_recently_played(limit=10)
-    if not recently_played['items']:
-        st.warning("No recently played tracks found.")
-        return
+    try:
+        st.header("Recently Played Tracks")
+        recently_played = sp.current_user_recently_played(limit=10)
+        if not recently_played['items']:
+            st.warning("No recently played tracks found.")
+            return
 
-    for item in recently_played['items']:
-        track = item['track']
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            st.image(track['album']['images'][0]['url'], width=80)
-        with col2:
-            st.markdown(f"**{track['name']}**")
-            st.markdown(f"By {track['artists'][0]['name']} on *{track['album']['name']}*")
-            st.link_button("Play on Spotify", track['external_urls']['spotify'])
-        st.divider()
+        for item in recently_played['items']:
+            track = item['track']
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                st.image(track['album']['images'][0]['url'], width=80)
+            with col2:
+                st.markdown(f"**{track['name']}**")
+                st.markdown(f"By {track['artists'][0]['name']} on *{track['album']['name']}*")
+                st.link_button("Play on Spotify", track['external_urls']['spotify'])
+            st.divider()
+    except spotipy.exceptions.SpotifyException:
+        st.error("Could not retrieve recently played tracks. Please try logging in again.")
+        if 'token_info' in st.session_state:
+            del st.session_state['token_info']
+            st.rerun()
 
 # --- Main App Logic ---
 def main():
@@ -183,5 +204,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
