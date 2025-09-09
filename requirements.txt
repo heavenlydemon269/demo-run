@@ -1,1 +1,1 @@
-spotipy
+pypdf2
