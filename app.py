@@ -6,29 +6,28 @@ import time
 
 # --- Helper Functions ---
 
-def get_pdf_text(pdf_bytes):
-    """Extracts text from a PDF file."""
-    try:
-        pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() or ""
-        return text
-    except Exception as e:
-        st.error(f"Error reading PDF: {e}")
-        return None
+def get_pdfs_text(pdf_docs_bytes):
+    """Extracts text from a list of PDF files."""
+    text = ""
+    for pdf_bytes in pdf_docs_bytes:
+        try:
+            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+            for page in pdf_reader.pages:
+                text += page.extract_text() or ""
+        except Exception as e:
+            st.error(f"Error reading a PDF: {e}")
+    return text
 
 def get_gemini_response(api_key, pdf_text, chat_history, question):
     """Gets a response from the Gemini API based on PDF text and chat history."""
     try:
         genai.configure(api_key=api_key)
-        # Updated model name to the latest recommended version
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
         # Construct the context and history for the model
-        # The prompt tells the model how to behave and includes the PDF text and chat history
         prompt_parts = [
-            "You are a helpful AI assistant. Your task is to answer questions based ONLY on the provided text from a PDF document and the ongoing conversation history.",
+            "You are a helpful AI assistant. Your task is to answer questions based ONLY on the provided text from PDF documents and the ongoing conversation history.",
+            "If the user asks for the answer in a specific language (e.g., 'in Hindi', 'in Tamil'), you MUST provide the answer in that language.",
             "Do not answer any questions that are outside the scope of the provided document text.",
             f"PDF Content:\n---\n{pdf_text}\n---\n",
             "Now, here is the conversation history:",
@@ -41,7 +40,6 @@ def get_gemini_response(api_key, pdf_text, chat_history, question):
         # Add the new user question
         prompt_parts.append(f"User: {question}")
         prompt_parts.append("Assistant:")
-
 
         response = model.generate_content("\n".join(prompt_parts))
         return response.text
@@ -59,10 +57,9 @@ def stream_response(text):
 st.set_page_config(page_title="PDF Chatbot Assistant", layout="wide")
 
 st.title("📄 PDF Chatbot Assistant")
-st.write("Upload a PDF document and ask any question about its content.")
+st.write("Upload one or more PDF documents and ask any question about their content.")
 
 # --- API Key Configuration ---
-# Check for the API key in Streamlit's secrets
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
 except KeyError:
@@ -70,59 +67,49 @@ except KeyError:
     st.error("Gemini API key not found. Please add it to your Streamlit secrets.")
     st.info("To add your secret, create a file in your project's root directory named `.streamlit/secrets.toml` with the following content:\n\n`GEMINI_API_KEY = 'YOUR_API_KEY_HERE'`")
 
-
 # --- Sidebar for PDF Upload ---
 with st.sidebar:
     st.header("Configuration")
-    uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
+    uploaded_files = st.file_uploader("Upload your PDF(s)", type="pdf", accept_multiple_files=True)
     
-    if uploaded_file:
-        st.success("PDF uploaded successfully!")
-        if st.button("Process Document"):
-            with st.spinner("Processing document..."):
-                pdf_bytes = uploaded_file.getvalue()
+    if uploaded_files:
+        st.success(f"{len(uploaded_files)} PDF(s) uploaded successfully!")
+        if st.button("Process Documents"):
+            with st.spinner("Processing documents..."):
+                pdf_docs_bytes = [file.getvalue() for file in uploaded_files]
                 # Store PDF text in session state
-                st.session_state.pdf_text = get_pdf_text(pdf_bytes)
+                st.session_state.pdf_text = get_pdfs_text(pdf_docs_bytes)
                 # Initialize chat history
-                st.session_state.messages = [{"role": "assistant", "content": "I've processed the document. What would you like to know?"}]
-            st.success("Document processed!")
+                st.session_state.messages = [{"role": "assistant", "content": "I've processed the documents. What would you like to know?"}]
+            st.success("Documents processed!")
 
 # --- Main Chat Interface ---
 
-# Initialize session state for messages if it doesn't exist
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display chat messages from history on app rerun
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# React to user input
-if prompt := st.chat_input("Ask a question about the PDF"):
-    # Display user message in chat message container
+if prompt := st.chat_input("Ask a question about the PDF(s)"):
     with st.chat_message("user"):
         st.markdown(prompt)
-    # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Check for prerequisites
     if not api_key:
         st.warning("API Key not configured. Please add it to your Streamlit secrets to continue.")
     elif "pdf_text" not in st.session_state or not st.session_state.pdf_text:
-        st.warning("Please upload and process a PDF document first.")
+        st.warning("Please upload and process at least one PDF document first.")
     else:
-        # Get and display assistant response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 response = get_gemini_response(
                     api_key, 
                     st.session_state.pdf_text, 
-                    st.session_state.messages[:-1], # Pass history excluding the current user message
+                    st.session_state.messages[:-1],
                     prompt
                 )
-            # Use the streaming effect
             st.write_stream(stream_response(response))
-        # Add assistant response to chat history
         st.session_state.messages.append({"role": "assistant", "content": response})
 
