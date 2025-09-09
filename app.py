@@ -1,178 +1,119 @@
 import streamlit as st
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 import io
 import google.generativeai as genai
 import time
 
 # --- Helper Functions ---
 
-def extract_text_from_pdf(pdf_file):
-    """
-    Extracts text from an uploaded PDF file.
-    """
+def get_pdf_text(pdf_bytes):
+    """Extracts text from a PDF file."""
     try:
-        # Create a file-like object from the uploaded file's bytes
-        pdf_file_object = io.BytesIO(pdf_file.read())
-        pdf_reader = PdfReader(pdf_file_object)
+        pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
         text = ""
         for page in pdf_reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text
+            text += page.extract_text() or ""
         return text
     except Exception as e:
-        st.error(f"Error reading the PDF file: {e}")
+        st.error(f"Error reading PDF: {e}")
         return None
 
-def get_gemini_response(api_key, context, question):
-    """
-    Generates a response from the Gemini API based on the PDF context and user question.
-    """
+def get_gemini_response(api_key, pdf_text, chat_history, question):
+    """Gets a response from the Gemini API based on PDF text and chat history."""
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-pro')
+
+        # Construct the context and history for the model
+        # The prompt tells the model how to behave and includes the PDF text and chat history
+        prompt_parts = [
+            "You are a helpful AI assistant. Your task is to answer questions based ONLY on the provided text from a PDF document and the ongoing conversation history.",
+            "Do not answer any questions that are outside the scope of the provided document text.",
+            f"PDF Content:\n---\n{pdf_text}\n---\n",
+            "Now, here is the conversation history:",
+        ]
+
+        # Add the existing chat history to the prompt
+        for message in chat_history:
+             prompt_parts.append(f"{message['role'].capitalize()}: {message['content']}")
         
-        prompt = f"""
-        You are a helpful assistant that answers questions based on the provided context from a PDF document.
-        Your goal is to provide a clear and concise answer.
-        If the answer is not available in the text, you must state that you cannot find the answer in the document.
-        Do not provide information from outside the given context.
+        # Add the new user question
+        prompt_parts.append(f"User: {question}")
+        prompt_parts.append("Assistant:")
 
-        CONTEXT:
-        {context}
 
-        QUESTION:
-        {question}
-
-        ANSWER:
-        """
-        
-        response = model.generate_content(prompt)
+        response = model.generate_content("\n".join(prompt_parts))
         return response.text
     except Exception as e:
-        # A more user-friendly error message
-        st.error("An error occurred while generating the response. Please check your API key and try again.")
-        # Log the full error for debugging
-        print(f"Gemini API Error: {e}") 
-        return "Sorry, I encountered an error. Please check the console for more details."
+        return f"An error occurred: {e}"
 
+def stream_response(text):
+    """Yields text word by word for a streaming effect."""
+    for word in text.split():
+        yield word + " "
+        time.sleep(0.05)
 
 # --- Streamlit App ---
 
-# Set page configuration
-st.set_page_config(page_title="PDF Chatbot with Gemini", page_icon="📄", layout="wide")
+st.set_page_config(page_title="PDF Chatbot Assistant", layout="wide")
 
-# Custom CSS for a better look and feel
-st.markdown("""
-<style>
-    .stApp {
-        background-color: #F0F2F6;
-    }
-    .stChatMessage {
-        border-radius: 10px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-    }
-    .st-chat-message-user {
-        background-color: #DCF8C6;
-    }
-    .st-chat-message-assistant {
-        background-color: #FFFFFF;
-    }
-    .stSidebar {
-        background-color: #FFFFFF;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-
-# --- Main UI ---
-
-st.title("📄 PDF Chatbot with Gemini")
+st.title("📄 PDF Chatbot Assistant")
 st.write("Upload a PDF document and ask any question about its content.")
 
-# Initialize session state variables
-if 'pdf_text' not in st.session_state:
-    st.session_state.pdf_text = None
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
-if 'api_key' not in st.session_state:
-    st.session_state.api_key = ""
-
-# --- Sidebar for PDF Upload and API Key ---
+# --- Sidebar for API Key and PDF Upload ---
 with st.sidebar:
     st.header("Configuration")
+    api_key = st.text_input("Enter your Google Gemini API Key:", type="password")
     
-    # API Key Input
-    api_key_input = st.text_input(
-        "Enter your Gemini API Key", 
-        type="password", 
-        value=st.session_state.api_key,
-        help="You can get your free API key from Google AI Studio."
-    )
-    if api_key_input:
-        st.session_state.api_key = api_key_input
-
-    st.markdown("---")
-    st.header("Upload Your PDF")
-    uploaded_file = st.file_uploader("Drag and drop a PDF file here", type=["pdf"])
-
+    uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
+    
     if uploaded_file:
+        st.success("PDF uploaded successfully!")
         if st.button("Process Document"):
-            if not st.session_state.api_key:
-                st.warning("Please enter your Gemini API key first.")
-            else:
-                with st.spinner("Extracting text from the document..."):
-                    extracted_text = extract_text_from_pdf(uploaded_file)
-                
-                if extracted_text:
-                    st.session_state.pdf_text = extracted_text
-                    st.session_state.chat_history = [
-                        {"role": "assistant", "content": "I've processed the document. What would you like to know?"}
-                    ]
-                    st.success("Document processed successfully!")
-                else:
-                    st.error("Failed to extract text. The PDF might be empty or corrupted.")
-    st.markdown("---")
-    st.info("This chatbot uses the Gemini API for question-answering.")
+            with st.spinner("Processing document..."):
+                pdf_bytes = uploaded_file.getvalue()
+                # Store PDF text in session state
+                st.session_state.pdf_text = get_pdf_text(pdf_bytes)
+                # Initialize chat history
+                st.session_state.messages = [{"role": "assistant", "content": "I've processed the document. What would you like to know?"}]
+            st.success("Document processed!")
 
+# --- Main Chat Interface ---
 
-# --- Chat Interface ---
+# Initialize session state for messages if it doesn't exist
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# Display previous messages
-if st.session_state.chat_history:
-    for message in st.session_state.chat_history:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+# Display chat messages from history on app rerun
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-# Handle new user input
-if st.session_state.pdf_text:
-    user_question = st.chat_input("Ask a question about the PDF content...")
-    if user_question:
-        # Add user message to history
-        st.session_state.chat_history.append({"role": "user", "content": user_question})
-        
-        # Display user message
-        with st.chat_message("user"):
-            st.markdown(user_question)
-            
-        # Generate and display assistant's response
+# React to user input
+if prompt := st.chat_input("Ask a question about the PDF"):
+    # Display user message in chat message container
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # Check for prerequisites
+    if not api_key:
+        st.warning("Please enter your Gemini API key in the sidebar.")
+    elif "pdf_text" not in st.session_state or not st.session_state.pdf_text:
+        st.warning("Please upload and process a PDF document first.")
+    else:
+        # Get and display assistant response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                answer = get_gemini_response(st.session_state.api_key, st.session_state.pdf_text, user_question)
-                
-                # Simulate typing effect
-                message_placeholder = st.empty()
-                full_response = ""
-                for chunk in answer.split():
-                    full_response += chunk + " "
-                    time.sleep(0.05)
-                    message_placeholder.markdown(full_response + "▌")
-                message_placeholder.markdown(full_response)
-
-        # Add assistant response to history
-        st.session_state.chat_history.append({"role": "assistant", "content": answer})
-else:
-    st.info("Please provide an API key and process a PDF using the sidebar to start the chat.")
-
+                response = get_gemini_response(
+                    api_key, 
+                    st.session_state.pdf_text, 
+                    st.session_state.messages[:-1], # Pass history excluding the current user message
+                    prompt
+                )
+            # Use the streaming effect
+            st.write_stream(stream_response(response))
+        # Add assistant response to chat history
+        st.session_state.messages.append({"role": "assistant", "content": response})
 
