@@ -61,11 +61,19 @@ st.set_page_config(page_title="PDF Chatbot Assistant", layout="wide")
 st.title("📄 PDF Chatbot Assistant")
 st.write("Upload a PDF document and ask any question about its content.")
 
-# --- Sidebar for API Key and PDF Upload ---
+# --- API Key Configuration ---
+# Check for the API key in Streamlit's secrets
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    api_key = None
+    st.error("Gemini API key not found. Please add it to your Streamlit secrets.")
+    st.info("To add your secret, create a file in your project's root directory named `.streamlit/secrets.toml` with the following content:\n\n`GEMINI_API_KEY = 'YOUR_API_KEY_HERE'`")
+
+
+# --- Sidebar for PDF Upload ---
 with st.sidebar:
     st.header("Configuration")
-    api_key = st.text_input("Enter your Google Gemini API Key:", type="password")
-    
     uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
     
     if uploaded_file:
@@ -100,7 +108,7 @@ if prompt := st.chat_input("Ask a question about the PDF"):
 
     # Check for prerequisites
     if not api_key:
-        st.warning("Please enter your Gemini API key in the sidebar.")
+        st.warning("API Key not configured. Please add it to your Streamlit secrets to continue.")
     elif "pdf_text" not in st.session_state or not st.session_state.pdf_text:
         st.warning("Please upload and process a PDF document first.")
     else:
