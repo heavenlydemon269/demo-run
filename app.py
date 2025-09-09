@@ -1,6 +1,8 @@
 import streamlit as st
 from PyPDF2 import PdfReader
 import io
+import google.generativelanguage as genai
+import time
 
 # --- Helper Functions ---
 
@@ -9,7 +11,9 @@ def extract_text_from_pdf(pdf_file):
     Extracts text from an uploaded PDF file.
     """
     try:
-        pdf_reader = PdfReader(pdf_file)
+        # Create a file-like object from the uploaded file's bytes
+        pdf_file_object = io.BytesIO(pdf_file.read())
+        pdf_reader = PdfReader(pdf_file_object)
         text = ""
         for page in pdf_reader.pages:
             page_text = page.extract_text()
@@ -20,38 +24,43 @@ def extract_text_from_pdf(pdf_file):
         st.error(f"Error reading the PDF file: {e}")
         return None
 
-def find_answer_in_text(text, question):
+def get_gemini_response(api_key, context, question):
     """
-    A simple keyword-based search to find answers in the text.
-    This is a placeholder and should be replaced with a real QA model (e.g., using Gemini, OpenAI, etc.).
+    Generates a response from the Gemini API based on the PDF context and user question.
     """
-    # Convert text and question to lowercase for case-insensitive search
-    text_lower = text.lower()
-    question_lower = question.lower()
-    
-    # Split text into sentences
-    sentences = text.split('.')
-    
-    # Find sentences containing keywords from the question
-    question_keywords = set(question_lower.split())
-    
-    relevant_sentences = []
-    for sentence in sentences:
-        sentence_lower = sentence.lower()
-        if any(keyword in sentence_lower for keyword in question_keywords):
-            relevant_sentences.append(sentence.strip())
-            
-    if relevant_sentences:
-        # Join the first few relevant sentences to form an answer
-        answer = ". ".join(relevant_sentences[:3]) + "."
-        return answer
-    else:
-        return "I'm sorry, I couldn't find an answer to your question in the document."
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        prompt = f"""
+        You are a helpful assistant that answers questions based on the provided context from a PDF document.
+        Your goal is to provide a clear and concise answer.
+        If the answer is not available in the text, you must state that you cannot find the answer in the document.
+        Do not provide information from outside the given context.
+
+        CONTEXT:
+        {context}
+
+        QUESTION:
+        {question}
+
+        ANSWER:
+        """
+        
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        # A more user-friendly error message
+        st.error("An error occurred while generating the response. Please check your API key and try again.")
+        # Log the full error for debugging
+        print(f"Gemini API Error: {e}") 
+        return "Sorry, I encountered an error. Please check the console for more details."
+
 
 # --- Streamlit App ---
 
 # Set page configuration
-st.set_page_config(page_title="PDF Chatbot", page_icon="📄", layout="wide")
+st.set_page_config(page_title="PDF Chatbot with Gemini", page_icon="📄", layout="wide")
 
 # Custom CSS for a better look and feel
 st.markdown("""
@@ -79,7 +88,7 @@ st.markdown("""
 
 # --- Main UI ---
 
-st.title("📄 PDF Chatbot Assistant")
+st.title("📄 PDF Chatbot with Gemini")
 st.write("Upload a PDF document and ask any question about its content.")
 
 # Initialize session state variables
@@ -87,18 +96,34 @@ if 'pdf_text' not in st.session_state:
     st.session_state.pdf_text = None
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = ""
 
-# --- Sidebar for PDF Upload ---
+# --- Sidebar for PDF Upload and API Key ---
 with st.sidebar:
+    st.header("Configuration")
+    
+    # API Key Input
+    api_key_input = st.text_input(
+        "Enter your Gemini API Key", 
+        type="password", 
+        value=st.session_state.api_key,
+        help="You can get your free API key from Google AI Studio."
+    )
+    if api_key_input:
+        st.session_state.api_key = api_key_input
+
+    st.markdown("---")
     st.header("Upload Your PDF")
     uploaded_file = st.file_uploader("Drag and drop a PDF file here", type=["pdf"])
 
     if uploaded_file:
         if st.button("Process Document"):
-            with st.spinner("Extracting text from the document..."):
-                # Read the uploaded file as bytes
-                file_bytes = io.BytesIO(uploaded_file.getvalue())
-                extracted_text = extract_text_from_pdf(file_bytes)
+            if not st.session_state.api_key:
+                st.warning("Please enter your Gemini API key first.")
+            else:
+                with st.spinner("Extracting text from the document..."):
+                    extracted_text = extract_text_from_pdf(uploaded_file)
                 
                 if extracted_text:
                     st.session_state.pdf_text = extracted_text
@@ -109,7 +134,7 @@ with st.sidebar:
                 else:
                     st.error("Failed to extract text. The PDF might be empty or corrupted.")
     st.markdown("---")
-    st.info("This is a demo app. The question-answering is based on simple keyword matching.")
+    st.info("This chatbot uses the Gemini API for question-answering.")
 
 
 # --- Chat Interface ---
@@ -133,11 +158,20 @@ if st.session_state.pdf_text:
             
         # Generate and display assistant's response
         with st.chat_message("assistant"):
-            with st.spinner("Searching for the answer..."):
-                answer = find_answer_in_text(st.session_state.pdf_text, user_question)
-                st.markdown(answer)
-        
+            with st.spinner("Thinking..."):
+                answer = get_gemini_response(st.session_state.api_key, st.session_state.pdf_text, user_question)
+                
+                # Simulate typing effect
+                message_placeholder = st.empty()
+                full_response = ""
+                for chunk in answer.split():
+                    full_response += chunk + " "
+                    time.sleep(0.05)
+                    message_placeholder.markdown(full_response + "▌")
+                message_placeholder.markdown(full_response)
+
         # Add assistant response to history
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
 else:
-    st.info("Please upload and process a PDF using the sidebar to start the chat.")
+    st.info("Please provide an API key and process a PDF using the sidebar to start the chat.")
+
