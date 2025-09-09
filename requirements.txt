@@ -1,3 +1,2 @@
 google-generativeai
-PyPDF2
-
+PyPDF
