@@ -1,206 +1,143 @@
 import streamlit as st
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
-import os
-import time
-
-# --- Environment Variables & Constants ---
-# For security, it's best to set these as environment variables.
-# You can also hardcode them for local testing, but this is not recommended for deployment.
-CLIENT_ID = st.secrets["SPOTIPY_CLIENT_ID"]
-CLIENT_SECRET = st.secrets["SPOTIPY_CLIENT_SECRET"]
-# The redirect URI must match the one set in your Spotify Developer Dashboard.
-# For local development, `http://localhost:8501` is common.
-REDIRECT_URI = "https://demo-run-hdp5ngt9c3662atwfqtbkx.streamlit.app/"
-
-# --- Streamlit Page Configuration ---
-st.set_page_config(
-    page_title="Spotify Dashboard",
-    page_icon="🎵",
-    initial_sidebar_state="collapsed",
-)
+from PyPDF2 import PdfReader
+import io
 
 # --- Helper Functions ---
 
-def get_spotify_oauth():
-    """Creates and returns a SpotifyOAuth object for authentication."""
-    return SpotifyOAuth(
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        redirect_uri=REDIRECT_URI,
-        scope="user-read-private user-read-email user-top-read user-read-recently-played",
-        cache_path=None, # Disable file-based caching for Streamlit
-        show_dialog=True # Ensures the user is always prompted for authorization
-    )
-
-def get_token_info():
+def extract_text_from_pdf(pdf_file):
     """
-    Retrieves token information from the session state.
-    Handles the authorization code flow if a code is present in the URL.
+    Extracts text from an uploaded PDF file.
     """
-    # Check if the auth code is in the URL query params
-    if 'code' in st.query_params:
-        auth_code = st.query_params['code']
-        sp_oauth = get_spotify_oauth()
-        try:
-            # Exchange the auth code for an access token, bypassing the cache to ensure new scopes are applied.
-            token_info = sp_oauth.get_access_token(auth_code, as_dict=True, check_cache=False)
-            st.session_state['token_info'] = token_info
-            # Clear the query params to prevent re-using the code
-            st.query_params.clear()
-            st.rerun() # Rerun to update the state
-        except Exception as e:
-            st.error(f"Error getting access token: {e}")
-            return None
-    # If token info is already in the session, return it
-    return st.session_state.get('token_info', None)
-
-def get_spotify_client(token_info):
-    """
-    Creates and returns an authenticated Spotipy client.
-    Handles token refreshing automatically.
-    """
-    if not token_info:
+    try:
+        pdf_reader = PdfReader(pdf_file)
+        text = ""
+        for page in pdf_reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text
+        return text
+    except Exception as e:
+        st.error(f"Error reading the PDF file: {e}")
         return None
 
-    sp_oauth = get_spotify_oauth()
-
-    # Check if the token is expired and refresh if necessary
-    now = int(time.time())
-    is_expired = token_info.get('expires_at', 0) - now < 60
-    if is_expired:
-        try:
-            token_info = sp_oauth.refresh_access_token(token_info['refresh_token'])
-            st.session_state['token_info'] = token_info
-        except Exception as e:
-            st.error(f"Error refreshing access token: {e}")
-            # If refresh fails, force re-login
-            st.session_state.pop('token_info', None)
-            return None
-
-    return spotipy.Spotify(auth=token_info['access_token'])
-
-
-def display_user_profile(sp):
-    """Displays the user's Spotify profile information."""
-    try:
-        user = sp.current_user()
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            if user['images']:
-                st.image(user['images'][0]['url'], width=150)
-            else:
-                st.image("https://placehold.co/150x150/2c2c2c/ffffff?text=User", width=150)
-        with col2:
-            st.title(f"Welcome, {user['display_name']}!")
-            st.subheader(f"Email: {user['email']}")
-            st.write(f"Followers: {user['followers']['total']}")
-            st.link_button("View Profile on Spotify", user['external_urls']['spotify'])
-    except spotipy.exceptions.SpotifyException:
-        st.error("Authentication error. Your session may have expired.")
-        # Force a re-login by clearing the token and rerunning the app
-        if 'token_info' in st.session_state:
-            del st.session_state['token_info']
-            st.rerun()
-
-def display_top_artists(sp):
-    """Displays the user's top artists."""
-    try:
-        st.header("Your Top Artists (Last 6 Months)")
-        top_artists = sp.current_user_top_artists(limit=10, time_range='medium_term')
-        if not top_artists['items']:
-            st.warning("Couldn't find any top artists. Go listen to some music!")
-            return
-
-        cols = st.columns(5)
-        for i, artist in enumerate(top_artists['items']):
-            with cols[i % 5]:
-                with st.container(border=True):
-                    if artist['images']:
-                        st.image(artist['images'][2]['url'])
-                    st.markdown(f"**{i+1}. {artist['name']}**")
-                    st.markdown(f"*{', '.join(g.title() for g in artist['genres'][:2])}*")
-                    st.link_button("Listen", artist['external_urls']['spotify'], use_container_width=True)
-    except spotipy.exceptions.SpotifyException:
-        # This will likely be caught by the first function, but it's good practice
-        st.error("Could not retrieve top artists. Please try logging in again.")
-        if 'token_info' in st.session_state:
-            del st.session_state['token_info']
-            st.rerun()
-
-
-def display_recently_played(sp):
-    """Displays recently played tracks."""
-    try:
-        st.header("Recently Played Tracks")
-        recently_played = sp.current_user_recently_played(limit=10)
-        if not recently_played['items']:
-            st.warning("No recently played tracks found.")
-            return
-
-        for item in recently_played['items']:
-            track = item['track']
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                st.image(track['album']['images'][0]['url'], width=80)
-            with col2:
-                st.markdown(f"**{track['name']}**")
-                st.markdown(f"By {track['artists'][0]['name']} on *{track['album']['name']}*")
-                st.link_button("Play on Spotify", track['external_urls']['spotify'])
-            st.divider()
-    except spotipy.exceptions.SpotifyException:
-        st.error("Could not retrieve recently played tracks. Please try logging in again.")
-        if 'token_info' in st.session_state:
-            del st.session_state['token_info']
-            st.rerun()
-
-# --- Main App Logic ---
-def main():
-    """Main function to run the Streamlit app."""
-    # Check for missing credentials
-    if not all([CLIENT_ID, CLIENT_SECRET, REDIRECT_URI]):
-        st.error("🚨 Critical Error: Spotify API credentials are not set.")
-        st.info("Please set SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, and SPOTIPY_REDIRECT_URI as environment variables.")
-        st.info("Refer to the README.md file for instructions.")
-        st.stop()
-
-    token_info = get_token_info()
-
-    if not token_info:
-        # --- LOGIN PAGE ---
-        st.title("🎵 Your Personal Spotify Dashboard")
-        st.write("Log in to see your listening habits and stats.")
-
-        sp_oauth = get_spotify_oauth()
-        auth_url = sp_oauth.get_authorize_url()
-        # Use st.link_button for a clean, non-form based redirection
-        st.link_button("Login with Spotify", auth_url, use_container_width=True)
+def find_answer_in_text(text, question):
+    """
+    A simple keyword-based search to find answers in the text.
+    This is a placeholder and should be replaced with a real QA model (e.g., using Gemini, OpenAI, etc.).
+    """
+    # Convert text and question to lowercase for case-insensitive search
+    text_lower = text.lower()
+    question_lower = question.lower()
+    
+    # Split text into sentences
+    sentences = text.split('.')
+    
+    # Find sentences containing keywords from the question
+    question_keywords = set(question_lower.split())
+    
+    relevant_sentences = []
+    for sentence in sentences:
+        sentence_lower = sentence.lower()
+        if any(keyword in sentence_lower for keyword in question_keywords):
+            relevant_sentences.append(sentence.strip())
+            
+    if relevant_sentences:
+        # Join the first few relevant sentences to form an answer
+        answer = ". ".join(relevant_sentences[:3]) + "."
+        return answer
     else:
-        # --- LOGGED-IN DASHBOARD ---
-        sp = get_spotify_client(token_info)
+        return "I'm sorry, I couldn't find an answer to your question in the document."
 
-        if sp:
-            # --- Sidebar for Logout ---
-            with st.sidebar:
-                st.header("Controls")
-                if st.button("Logout"):
-                    st.session_state.pop('token_info', None)
-                    st.rerun()
+# --- Streamlit App ---
 
-            # --- Main Content ---
-            display_user_profile(sp)
-            st.divider()
-            display_top_artists(sp)
-            st.divider()
-            display_recently_played(sp)
-        else:
-            # Handle case where client could not be created (e.g., token refresh failed)
-            st.error("Could not connect to Spotify. Please try logging in again.")
-            if st.button("Retry Login"):
-                 st.session_state.pop('token_info', None)
-                 st.rerun()
+# Set page configuration
+st.set_page_config(page_title="PDF Chatbot", page_icon="📄", layout="wide")
+
+# Custom CSS for a better look and feel
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #F0F2F6;
+    }
+    .stChatMessage {
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+    }
+    .st-chat-message-user {
+        background-color: #DCF8C6;
+    }
+    .st-chat-message-assistant {
+        background-color: #FFFFFF;
+    }
+    .stSidebar {
+        background-color: #FFFFFF;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 
-if __name__ == "__main__":
-    main()
+# --- Main UI ---
 
+st.title("📄 PDF Chatbot Assistant")
+st.write("Upload a PDF document and ask any question about its content.")
+
+# Initialize session state variables
+if 'pdf_text' not in st.session_state:
+    st.session_state.pdf_text = None
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+
+# --- Sidebar for PDF Upload ---
+with st.sidebar:
+    st.header("Upload Your PDF")
+    uploaded_file = st.file_uploader("Drag and drop a PDF file here", type=["pdf"])
+
+    if uploaded_file:
+        if st.button("Process Document"):
+            with st.spinner("Extracting text from the document..."):
+                # Read the uploaded file as bytes
+                file_bytes = io.BytesIO(uploaded_file.getvalue())
+                extracted_text = extract_text_from_pdf(file_bytes)
+                
+                if extracted_text:
+                    st.session_state.pdf_text = extracted_text
+                    st.session_state.chat_history = [
+                        {"role": "assistant", "content": "I've processed the document. What would you like to know?"}
+                    ]
+                    st.success("Document processed successfully!")
+                else:
+                    st.error("Failed to extract text. The PDF might be empty or corrupted.")
+    st.markdown("---")
+    st.info("This is a demo app. The question-answering is based on simple keyword matching.")
+
+
+# --- Chat Interface ---
+
+# Display previous messages
+if st.session_state.chat_history:
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+# Handle new user input
+if st.session_state.pdf_text:
+    user_question = st.chat_input("Ask a question about the PDF content...")
+    if user_question:
+        # Add user message to history
+        st.session_state.chat_history.append({"role": "user", "content": user_question})
+        
+        # Display user message
+        with st.chat_message("user"):
+            st.markdown(user_question)
+            
+        # Generate and display assistant's response
+        with st.chat_message("assistant"):
+            with st.spinner("Searching for the answer..."):
+                answer = find_answer_in_text(st.session_state.pdf_text, user_question)
+                st.markdown(answer)
+        
+        # Add assistant response to history
+        st.session_state.chat_history.append({"role": "assistant", "content": answer})
+else:
+    st.info("Please upload and process a PDF using the sidebar to start the chat.")
