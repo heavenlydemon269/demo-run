@@ -26,9 +26,12 @@ def get_gemini_response(api_key, pdf_text, chat_history, question):
 
         # Construct the context and history for the model
         prompt_parts = [
-            "You are a helpful AI assistant. Your task is to answer questions based ONLY on the provided text from PDF documents and the ongoing conversation history.",
-            "If the user asks for the answer in a specific language (e.g., 'in Hindi', 'in Tamil'), you MUST provide the answer in that language.",
-            "Do not answer any questions that are outside the scope of the provided document text.",
+            "You are a helpful AI assistant. Your primary task is to answer questions using ONLY the information contained in the provided PDF text.",
+            "First, find the relevant information in the PDF to formulate an answer in English.",
+            "Then, check if the user has requested the answer in a specific language (e.g., 'in Hindi', 'in Marathi', 'in Tamil').",
+            "If a specific language is requested, you MUST translate the English answer you formulated into that language. The final response should ONLY be in the requested language.",
+            "If the information to answer the question cannot be found in the PDF, state that the information is not available, and say this in the language the user requested (or in English if no language was specified).",
+            "Do not use any external knowledge.",
             f"PDF Content:\n---\n{pdf_text}\n---\n",
             "Now, here is the conversation history:",
         ]
