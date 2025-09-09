@@ -1,7 +1,7 @@
 import streamlit as st
 from PyPDF2 import PdfReader
 import io
-import google.generativelanguage as genai
+import google.generativeai as genai
 import time
 
 # --- Helper Functions ---
@@ -174,4 +174,5 @@ if st.session_state.pdf_text:
         st.session_state.chat_history.append({"role": "assistant", "content": answer})
 else:
     st.info("Please provide an API key and process a PDF using the sidebar to start the chat.")
+
 
