@@ -1,2 +1,2 @@
-pypdf2
-google-generativeai
+PyPDF2
+google-generativelanguage
