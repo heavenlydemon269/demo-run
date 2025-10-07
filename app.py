@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 from pypdf import PdfReader
 import io
@@ -137,4 +136,3 @@ if prompt := st.chat_input("Ask a question about the PDF(s)"):
                 )
             st.write_stream(stream_response(response))
         st.session_state.messages.append({"role": "assistant", "content": response})
-```
