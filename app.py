@@ -1,7 +1,8 @@
+```python
 import streamlit as st
 from pypdf import PdfReader
 import io
-import google.generativeai as genai
+import requests
 import time
 
 # --- Helper Functions ---
@@ -18,42 +19,63 @@ def get_pdfs_text(pdf_docs_bytes):
             st.error(f"Error reading a PDF: {e}")
     return text
 
-def get_gemini_response(api_key, pdf_text, chat_history, question):
-    """Gets a response from the Gemini API based on PDF text and chat history."""
-    try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
 
-        # Construct the context and history for the model
-        prompt_parts = [
-            "You are a helpful AI assistant. Your primary task is to answer questions using ONLY the information contained in the provided PDF text.",
-            "First, find the relevant information in the PDF to formulate an answer in English.",
-            "Then, check if the user has requested the answer in a specific language (e.g., 'in Hindi', 'in Marathi', 'in Tamil').",
-            "If a specific language is requested, you MUST translate the English answer you formulated into that language. The final response should ONLY be in the requested language.",
-            "If the information to answer the question cannot be found in the PDF, state that the information is not available, and say this in the language the user requested (or in English if no language was specified).",
-            "Do not use any external knowledge.",
-            f"PDF Content:\n---\n{pdf_text}\n---\n",
-            "Now, here is the conversation history:",
+def get_openrouter_response(api_key, pdf_text, chat_history, question):
+    """Gets a response from the OpenRouter API based on PDF text and chat history."""
+    try:
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "http://localhost:8501",  # Change to your Streamlit app URL when deployed
+            "X-Title": "PDF Chatbot Assistant"
+        }
+
+        # Build the conversation context
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful AI assistant. Your primary task is to answer questions using ONLY the information "
+                    "contained in the provided PDF text.\n"
+                    "First, find the relevant information in the PDF to formulate an answer in English.\n"
+                    "Then, check if the user has requested the answer in a specific language (e.g., 'in Hindi', 'in Marathi', 'in Tamil').\n"
+                    "If a specific language is requested, you MUST translate the English answer into that language. "
+                    "If the information cannot be found, say 'Information not available' in the requested language (or in English by default).\n"
+                    "Do not use any external knowledge."
+                )
+            },
+            {"role": "system", "content": f"PDF Content:\n---\n{pdf_text}\n---"}
         ]
 
-        # Add the existing chat history to the prompt
+        # Add chat history
         for message in chat_history:
-             prompt_parts.append(f"{message['role'].capitalize()}: {message['content']}")
-        
-        # Add the new user question
-        prompt_parts.append(f"User: {question}")
-        prompt_parts.append("Assistant:")
+            messages.append({"role": message["role"], "content": message["content"]})
 
-        response = model.generate_content("\n".join(prompt_parts))
-        return response.text
+        # Add the latest user question
+        messages.append({"role": "user", "content": question})
+
+        payload = {
+            "model": "mistralai/mistral-small-3.2-24b-instruct:free",  # You can change this to another model on OpenRouter
+            "messages": messages,
+            "temperature": 0.7,
+        }
+
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        result = response.json()
+
+        return result["choices"][0]["message"]["content"].strip()
+
     except Exception as e:
-        return f"An error occurred: {e}"
+        return f"An error occurred while contacting OpenRouter: {e}"
+
 
 def stream_response(text):
     """Yields text word by word for a streaming effect."""
     for word in text.split():
         yield word + " "
         time.sleep(0.05)
+
 
 # --- Streamlit App ---
 
@@ -64,11 +86,11 @@ st.write("Upload one or more PDF documents and ask any question about their cont
 
 # --- API Key Configuration ---
 try:
-    api_key = st.secrets["GEMINI_API_KEY"]
+    api_key = st.secrets["OPENROUTER_API_KEY"]
 except KeyError:
     api_key = None
-    st.error("Gemini API key not found. Please add it to your Streamlit secrets.")
-    st.info("To add your secret, create a file in your project's root directory named `.streamlit/secrets.toml` with the following content:\n\n`GEMINI_API_KEY = 'YOUR_API_KEY_HERE'`")
+    st.error("OpenRouter API key not found. Please add it to your Streamlit secrets.")
+    st.info("To add your secret, create a file in your project's root directory named `.streamlit/secrets.toml` with the following content:\n\n`OPENROUTER_API_KEY = 'YOUR_API_KEY_HERE'`")
 
 # --- Sidebar for PDF Upload ---
 with st.sidebar:
@@ -107,7 +129,7 @@ if prompt := st.chat_input("Ask a question about the PDF(s)"):
     else:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                response = get_gemini_response(
+                response = get_openrouter_response(
                     api_key, 
                     st.session_state.pdf_text, 
                     st.session_state.messages[:-1],
@@ -115,4 +137,4 @@ if prompt := st.chat_input("Ask a question about the PDF(s)"):
                 )
             st.write_stream(stream_response(response))
         st.session_state.messages.append({"role": "assistant", "content": response})
-
+```
