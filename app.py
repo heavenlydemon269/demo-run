@@ -38,7 +38,7 @@ def get_openrouter_response(api_key, pdf_text, chat_history, question):
                     "contained in the provided PDF text.\n"
                     "First, find the relevant information in the PDF to formulate an answer in English.\n"
                     "Then, check if the user has requested the answer in a specific language (e.g., 'in Hindi', 'in Marathi', 'in Tamil').\n"
-                    "If a specific language is requested, you MUST translate the English answer into that language. "
+                    "If a specific language is requested, you MUST answer in English"
                     "If the information cannot be found, say 'Information not available' in the requested language (or in English by default).\n"
                     "Do not use any external knowledge."
                 )
