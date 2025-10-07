@@ -22,7 +22,7 @@ def get_gemini_response(api_key, pdf_text, chat_history, question):
     """Gets a response from the Gemini API based on PDF text and chat history."""
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-1.5-flash')
 
         # Construct the context and history for the model
         prompt_parts = [
